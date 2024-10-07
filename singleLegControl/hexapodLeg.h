@@ -27,9 +27,9 @@ public:
     void moveLegToPos(float x, float y, float z);
     void moveLegToPos(const Eigen::Vector3d& pos);
 
-    void moveToZero();
-    void moveToBasic();
-    void moveToOff();
+    void jumpToZero();
+    void jumpToBasic();
+    void jumpToOff();
 
     void doJacobianTest(const int &style);
     void doLegIKTest();

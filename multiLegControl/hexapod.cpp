@@ -29,7 +29,7 @@ Hexapod::Hexapod(unsigned int id, std::unique_ptr<ArduinoController> arduino, RS
     currentAngles = Eigen::VectorXd(18);
     pos = Eigen::VectorXd(18);
 
-    // moveToCurled();
+    // jumpToCurled();
 }
 
 Hexapod::~Hexapod()
@@ -158,7 +158,7 @@ void Hexapod::printPos() const
 }
 
 // Move to straight leg position
-void Hexapod::moveToZero()
+void Hexapod::jumpToZero()
 {
     Eigen::VectorXd zeroAnglesVector(18);       
     float zeroAngles[3] = {0, 0 * M_PI / 180, 360 * M_PI / 180};
@@ -168,7 +168,7 @@ void Hexapod::moveToZero()
     setAngs(zeroAnglesVector);
 }
 // Move to basic standing position
-void Hexapod::moveToBasic()
+void Hexapod::jumpToBasic()
 {
     Eigen::VectorXd basicAnglesVector(18);
     float basicAngles[3] = {0 * M_PI / 180, 40 * M_PI / 180, (360 - 102) * M_PI / 180};
@@ -179,7 +179,7 @@ void Hexapod::moveToBasic()
     setAngs(basicAnglesVector);
 }
 // Move to position that should fold back past limit when power disabled
-void Hexapod::moveToOff()
+void Hexapod::jumpToOff()
 {
     Eigen::VectorXd offAnglesVector(18);
     float offAngles[3] = {0 * M_PI / 180, 90 * M_PI / 180, (360 - 163) * M_PI / 180};
@@ -189,7 +189,7 @@ void Hexapod::moveToOff()
     setAngs(offAnglesVector);
 }
 // Move to curled position
-void Hexapod::moveToCurled()
+void Hexapod::jumpToCurled()
 {
     Eigen::VectorXd offAnglesVector(18);
     float offAngles[3] = {0 * M_PI / 180, 135 * M_PI / 180, (360 - 158) * M_PI / 180};

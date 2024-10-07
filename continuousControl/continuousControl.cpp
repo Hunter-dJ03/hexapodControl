@@ -1,3 +1,11 @@
+#ifdef USE_SIMULATOR
+    const bool raisimSimulator = true;
+    #include "raisim/RaisimServer.hpp"
+    #include <raisim/Path.hpp>
+#else
+    const bool raisimSimulator = false;
+#endif
+
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
@@ -9,21 +17,24 @@
 #include <csignal>
 #include "../modules/custom/utilities/utils.h"
 #include <iomanip>
-#include "raisim/RaisimServer.hpp"
 #include "../modules/custom/arduinoConnection/arduinoController.h"
 #include "../modules/custom/rsTimedLoop/rsTimedLoop.h"
 #include "hexapod.h"
 #include <fstream>
 #include <memory>
+#include "../modules/custom/getController/getController.h"
+
 
 
 using namespace std;
 
-const bool raisimSimulator = true;
-const float rsStep = 10; // Real Time Step (ms)
+// Operation Parameters
+const float rsStep = 5; // Real Time Step (ms)
 
+// Real Time Loop initialisation
 RSTimedLoop rsLoop(rsStep);
 
+// Variables to share between threads
 atomic<bool> running(true);
 atomic<float> inputAxisX(0.0f);
 atomic<float> inputAxisY(0.0f);
@@ -35,35 +46,61 @@ atomic<bool> buttonY(false);
 atomic<bool> buttonX(false);
 atomic<int> dPadX(0);
 atomic<int> dPadY(0);
+atomic<float> moveVectorMag;
+atomic<float> moveVectorAng;
 
+// Interrupt handler
 void signalHandler(int signum) {
     running = false; // Stop the loops
 }
 
+// Function for reading from controller in new thread
 void readController(HexapodControl& hexapod) {
-    const char *device = "/dev/input/event20";  // Using event20 as specified
-    int fd = open(device, O_RDONLY);    
-    
-    if (fd == -1) {
-        cerr << "Failed to open input device." << endl;
-        return;
+    // Controller connection status
+    int fd;
+
+    // Loop until the Controller is successfully opened
+    while (true) {
+
+        // Input event stream for contorller (might need to adjust for when event changes )
+        const string device = SteelSeriesDeviceFinder::get_device_path("SteelSeries Stratus XL");
+
+        // Access controller
+        fd = open(device.c_str(), O_RDONLY);
+
+        if (fd == -1) {
+            cerr << "Failed to open input device "<<device<<". Retrying..." << endl;
+            sleep(1);  // Wait for 1 second before trying again
+        } else {
+            cout << "Connected to device: " << device << endl;
+            break;  // Exit loop when successfully opened
+        }
     }
 
     struct input_event ev;
 
+    // Counter for low velocity to allow joystick parsing quickly through zero zone
+    static int lowVelCounter = 0;
+
+    // Controlle reading cycle
     while (running) {
+        // Read event
         ssize_t n = read(fd, &ev, sizeof(ev));
+
+        // Check if event read failes
         if (n == (ssize_t)-1) {
             cerr << "Failed to read input event." << endl;
             break;
         }
 
+        // Only read button press (key) and joystick (abs) readings
         if (ev.type == EV_ABS || ev.type == EV_KEY) {
             // Handle deadzone for Right Trigger (code 9) and Left Trigger (code 10)
             if ((ev.code == 9 || ev.code == 10) && abs(ev.value) < 2048) {
                 continue; // Skip further processing if within the deadzone
             }
 
+            // Switch case for each event handling
             switch (ev.code) {
                 case 0: // Left Joystick X
                     // cout << "Left Joystick X: " << ev.value << " (" 
@@ -105,10 +142,11 @@ void readController(HexapodControl& hexapod) {
                 //     // cout << "Left Joystick Click: " << ev.value << " (" 
                 //     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
                 //     break;
-                // case 318: // Right Joystick Click
-                //     // cout << "Right Joystick Click: " << ev.value << " (" 
-                //     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                //     break;
+                case 318: // Right Joystick Click
+                    // cout << "Right Joystick Click: " << ev.value << " (" 
+                    //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
+                    running = false;
+                    break;
                 case 304: // Button A
                     // cout << "Button A: " << ev.value << " (" 
                     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
@@ -160,8 +198,6 @@ void readController(HexapodControl& hexapod) {
                 case 311: // Right Bumper
                     // cout << "Right Bumper: " << ev.value << " (" 
                     //           << (ev.value == 1 ? "Pressed" : "Released") << ")" << endl;
-                    
-                    
                     rightBumper = ev.value;
                     break;
                 case 310: // Left Bumper
@@ -174,50 +210,93 @@ void readController(HexapodControl& hexapod) {
                     break;
             }
         }
+
+        // Calculate the velocity magnitude and angle
+        moveVectorMag = Utils::constrain(sqrt(pow(inputAxisX, 2) + pow(inputAxisY, 2)), 0, 2047)   / 2047 ;
+        moveVectorAng = atan2(-inputAxisY, inputAxisX);
+
+        // Store vector magnitude in hexapod class
+        hexapod.moveVectorMag = moveVectorMag;
+
+        // hexapod.di
+
+        // Check if moveVectorMag is less than 0.05
+        if (moveVectorMag < 0.05) {
+            // Increment the counter if below 0.05
+            lowVelCounter++;
+        } else {
+            // Reset the counter if it goes above 0.05
+            lowVelCounter = 0;
+        }
+
+        // Handle low velocity magnitude to allow joystick parsing quickly through zero zone and distinguish from joystick release / stop
+        // hexapod.operationDuration *= (lowVelCounter < 6);
+
+        hexapod.directed = (lowVelCounter < 6);
+
+        if (moveVectorMag < 0.05 && !hexapod.directed && lowVelCounter < 20) {
+            hexapod.operationDuration = 0;
+        } 
     }
 
+    // close the device connection
     close(fd);
 }
 
+// Run the hexapod
 void runHexapod(HexapodControl& hexapod) {
     
     // Record start time
     auto startTime = chrono::high_resolution_clock::now();
-    hexapod.desiredAngles = hexapod.simulator->convertVecDynToEigen(hexapod.simulator->hexapodLegModel->getGeneralizedCoordinate());
-    // cout<<hexapod.desiredAngles;
+
+    // Set real time loop next time
     hexapod.rsLoop.updateTimeDelay();
 
+    // Simulation Loop
     while (running) {
-        // hexapod.rsLoop.realTimeDelay();
-        // hexapod.simulator->server->integrateWorldThreadSafe();
-        // continue;
-        // Get current position
-        hexapod.currentAngles = hexapod.simulator->convertVecDynToEigen(hexapod.simulator->hexapodLegModel->getGeneralizedCoordinate());
-        hexapod.currentAngularVelocities = hexapod.simulator->convertVecDynToEigen(hexapod.simulator->hexapodLegModel->getGeneralizedVelocity());
-
-        hexapod.updatePos();
         
         // Preset holding position
-        hexapod.simulator->setSimVelocity(hexapod.desiredAngles, Eigen::VectorXd::Zero(18));
+        #ifdef USE_SIMULATOR
+            hexapod.simulator->setSimVelocity(hexapod.desiredAngles, Eigen::VectorXd::Zero(18));
+        #endif
 
-        if (hexapod.active) {
-            float moveVectorMag = Utils::constrain(sqrt(pow(inputAxisX, 2) + pow(inputAxisY, 2)), 0, 2047)   / 2047 * 100;
-            float moveVectorAng = atan2(-inputAxisY, inputAxisX);
+        // Update the current position
+        hexapod.updatePos();
+        
+        // If the hexapod has been deployed
+        if (hexapod.active) {   
 
-            // Remap the angle from [-π, π] to [0, 2π]
-            if (moveVectorAng < 0) {
-                moveVectorAng += 2 * M_PI;
+            // Handle walking
+            if (moveVectorMag >= 0.05) {
+                
+                // cout << "\rMove Vector: " << moveVectorMag *100 << "\% at "<< moveVectorAng << endl;
+
+                // Walk
+                hexapod.walk(moveVectorMag, moveVectorAng);
+
+                // Move back to stand position
+                if (moveVectorMag < 0.05) {
+                    hexapod.moveToStand(hexapod.standDuration);
+                }  
+            } 
+
+            // Jacobian Tests
+            if (buttonX) {
+                if (dPadX == -1) {
+                    hexapod.jacobianTest(0);
+                    hexapod.moveToStand(hexapod.standDuration);
+                } else if (dPadX == 1) {
+                    hexapod.jacobianTest(1);
+                    hexapod.moveToStand(hexapod.standDuration);
+                } else if (dPadY == 1) {
+                    hexapod.jacobianTest(2);
+                    hexapod.moveToStand(hexapod.standDuration);
+                }
             }
 
-            // Set precision and width for consistent output
-            cout << "\rMove Vector: " 
-                    << fixed << setprecision(2) << setw(6) << moveVectorMag << "\% at "
-                    << fixed << setprecision(2) << setw(6) << moveVectorAng 
-                    << flush;
         }
         
-        // hexapod.moveToOff();
-
+        // Activate or Deactivate the rover;
         if (leftBumper && rightBumper) {
 
             if (!hexapod.active) {
@@ -228,51 +307,53 @@ void runHexapod(HexapodControl& hexapod) {
             } else {
                 cout<<endl<<"turning off" <<endl;
                 hexapod.active = false;
-                hexapod.off();
+                hexapod.moveToOff();
                 
             }
            
         } 
         
-
-        // if (buttonA) {
-        //     hexapod.moveToZero();
-        // }
-
-        if (buttonX) {
-            if (dPadX == -1) {
-                hexapod.jacobianTest(0);
-            } else if (dPadX == 1) {
-                hexapod.jacobianTest(1);
-            } else if (dPadY == 1) {
-                hexapod.jacobianTest(2);
-            }
+        // Display current leg information
+        if (buttonY) {
+            cout<<"Current Angles: "<< hexapod.currentAngles<<endl;
+            cout<<"Desired Angles: "<< hexapod.desiredAngles<<endl;
+            hexapod.printPos();
         }
 
-        // if (buttonY) {
-        //     cout<<"Current Angles: "<< hexapod.currentAngles<<endl;
-        //     cout<<"Desired Angles: "<< hexapod.desiredAngles<<endl;
-        //     hexapod.printPos();
-        // }
+        // Display current leg information
+        if (buttonB) {
+            hexapod.jumpToZero();
+        }
+        // Display current leg information
+        if (buttonA) {
+            hexapod.jumpToOff();
+        }
 
+        // Real time delay and server integration;
         hexapod.rsLoop.realTimeDelay();
-        hexapod.simulator->server->integrateWorldThreadSafe();
+
+        #ifdef USE_SIMULATOR
+            hexapod.simulator->server->integrateWorldThreadSafe();
+        #endif
     }
 
-    // Calculate the duration
+    // Calculate and display the duration
     auto endTime = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = endTime - startTime;
-
-    hexapod.simulator->server->killServer();
-    
-    // Output the duration
     cout << "\nrunHexapod loop duration: " << elapsed.count() << " seconds." << endl;
+
+    #ifdef USE_SIMULATOR
+        // Close the raisim simulator
+        hexapod.simulator->server->killServer();
+    #endif
 }
 
+// initial function
 int main(int argc, char* argv[]) {
 
-    // Set the path for raisim simulator
-    Path binaryPath = raisim::Path::setFromArgv(argv[0]);
+    #ifdef USE_SIMULATOR
+        Path binaryPath = raisim::Path::setFromArgv(argv[0]);
+    #endif
 
     // Setup communication file stream for arduino connection
     fstream arduinoPort("/dev/ttyACM0");
@@ -283,6 +364,7 @@ int main(int argc, char* argv[]) {
     // Assume arduino Connected
     bool arduinoConnected = true;
 
+    // Handle arduino connection
     if (arduinoPort) {
         // Set the Arduino Controller up with port and abud rate
         arduino = make_unique<ArduinoController>("/dev/ttyACM0", 921600);
@@ -299,7 +381,16 @@ int main(int argc, char* argv[]) {
         cout << "Arduino not connected. Running in simulation mode." << endl;
     }
     // Create Hexapod 
-    HexapodControl hexapod(1, move(arduino), rsLoop, arduinoConnected, raisimSimulator, rsStep, binaryPath);
+    HexapodControl hexapod(1, move(arduino), rsLoop, arduinoConnected, raisimSimulator, rsStep
+    #ifdef USE_SIMULATOR
+        , binaryPath
+    #endif
+    );
+
+    #ifdef USE_SIMULATOR
+        hexapod.simulator->server->focusOn(hexapod.simulator->hexapodLegModel.get());
+    #endif
+
     // Start the controller input reading in a separate thread
     thread input_thread(readController, ref(hexapod));
     // Register signal handler

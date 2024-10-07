@@ -17,6 +17,7 @@ public:
 
     void sendStringCommand(const string& command);
     void sendBitSetCommand(std::vector<uint8_t>& command);
+    void sendPacket(const vector<uint8_t> &packet);
     void closeConnection();
     string readData();
 

@@ -26,6 +26,12 @@ void ArduinoController::sendStringCommand(const std::string &command)
 }
 
 // Sends input command to arduino
+void ArduinoController::sendPacket(const vector<uint8_t> &packet)
+{
+    boost::asio::write(serial, boost::asio::buffer(packet));
+}
+
+// Sends input command to arduino
 void ArduinoController::sendBitSetCommand(std::vector<uint8_t> &command)
 {
     boost::asio::write(serial, boost::asio::buffer(command));

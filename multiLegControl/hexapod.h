@@ -30,10 +30,10 @@ public:
     void moveLegsToPos(const Eigen::VectorXd& desiredPos);
 
 
-    void moveToZero();
-    void moveToBasic();
-    void moveToOff();
-    void moveToCurled();
+    void jumpToZero();
+    void jumpToBasic();
+    void jumpToOff();
+    void jumpToCurled();
 
     void stand();
 

@@ -73,11 +73,11 @@ int main(int argc, char* argv[]) {
 // Takes command input and if valid, performs the desired operations
 void parseCommand(const string& command, HexapodLeg &leg) {
     if (command == "zero") {
-        leg.moveToZero();
+        leg.jumpToZero();
     } else if (command == "basic") {
-        leg.moveToBasic();
+        leg.jumpToBasic();
     } else if (command == "off") {
-        leg.moveToOff();
+        leg.jumpToOff();
     } else if (command == "ikTest") {
         leg.doBodyIKTest();
     } else if (command == "jacTest") {

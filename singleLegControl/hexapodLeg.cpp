@@ -152,19 +152,19 @@ Eigen::Vector3d HexapodLeg::updatePos() const
 }
 
 // Move to straight leg position
-void HexapodLeg::moveToZero()
+void HexapodLeg::jumpToZero()
 {
     setAngs(0, 0, 360 * M_PI / 180);
     // simulator->setSimAngle(0, 0, 360 * M_PI / 180);
 }
 // Move to basic standing position
-void HexapodLeg::moveToBasic()
+void HexapodLeg::jumpToBasic()
 {
     setAngs(0 * M_PI / 180, 40 * M_PI / 180, (360 - 102) * M_PI / 180);
     // simulator->setSimAngle(0 * M_PI / 180, 40 * M_PI / 180, (360 - 102) * M_PI / 180);
 }
 // Move to position that should fold back past limit when power disabled
-void HexapodLeg::moveToOff()
+void HexapodLeg::jumpToOff()
 {
     setAngs(0 * M_PI / 180, 90 * M_PI / 180, (360 - 163) * M_PI / 180);
     // simulator->setSimAngle(0 * M_PI / 180, 90 * M_PI / 180, (360 - 163) * M_PI / 180);

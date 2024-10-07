@@ -73,11 +73,11 @@ int main(int argc, char* argv[]) {
 // Takes command input and if valid, performs the desired operations
 void parseCommand(const string& command, Hexapod &hexapod) {
     if (command == "zero") {
-        hexapod.moveToZero();
+        hexapod.jumpToZero();
     } else if (command == "basic") {
-        hexapod.moveToBasic();
+        hexapod.jumpToBasic();
     } else if (command == "off") {
-        hexapod.moveToOff();
+        hexapod.jumpToOff();
     // } else if (command == "ikTest") {
     //     hexapod.doBodyIKTest();
     } else if (command == "jacTest") {
@@ -87,7 +87,7 @@ void parseCommand(const string& command, Hexapod &hexapod) {
     } else if (command == "printPos") {
         hexapod.printPos();
     } else if (command == "curl") {
-        hexapod.moveToCurled();
+        hexapod.jumpToCurled();
     }
     else {
         cout << "Unknown command: " << command << endl;

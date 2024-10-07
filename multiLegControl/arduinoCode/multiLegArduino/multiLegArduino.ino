@@ -2,7 +2,8 @@
 #include <Servo.h>
 
 const int NUM_VALUES = 18;
-const int TOTAL_BITS = NUM_VALUES * 11;
+const int BITS_PER_VALUE = 16;
+const int TOTAL_BITS = NUM_VALUES * BITS_PER_VALUE;
 const int TOTAL_BYTES = (TOTAL_BITS + 7) / 8;
 
 Servo coxa1;
@@ -20,9 +21,9 @@ Servo tibia4;
 Servo coxa5;
 Servo femur5;
 Servo tibia5;
-//Servo coxa6;
-//Servo femur6;
-//Servo tibia6;
+Servo coxa6;
+Servo femur6;
+Servo tibia6;
 
 void initLegs() {
   // Attach Servos
@@ -46,9 +47,9 @@ void initLegs() {
    femur5.attach(36);
    tibia5.attach(38);
   
-  //  coxa6.attach();
-  //  femur6.attach();
-  //  tibia6.attach();
+   coxa6.attach(40);
+   femur6.attach(42);
+   tibia6.attach(44);
 };
 
 void setAngs(float decodedFloats[18]) {
@@ -71,6 +72,10 @@ void setAngs(float decodedFloats[18]) {
   coxa5.writeMicroseconds(deg2ms(decodedFloats[12]));
   femur5.writeMicroseconds(deg2ms(decodedFloats[13]));
   tibia5.writeMicroseconds(deg2ms(decodedFloats[14]));
+
+  coxa6.writeMicroseconds(deg2ms(decodedFloats[15]));
+  femur6.writeMicroseconds(deg2ms(decodedFloats[16]));
+  tibia6.writeMicroseconds(deg2ms(decodedFloats[17]));
 }
 
 void decodeBytes(const uint8_t* bytes, float* floats, int numValues) {
@@ -82,8 +87,8 @@ void decodeBytes(const uint8_t* bytes, float* floats, int numValues) {
 
   for (int i = 0; i < numValues; ++i) {
     uint16_t value = 0;
-    for (int j = 0; j < 11; ++j) {
-      if (bitBuffer[i * 11 + j]) {
+    for (int j = 0; j < BITS_PER_VALUE; ++j) {
+      if (bitBuffer[i * BITS_PER_VALUE + j]) {
         value |= (1 << j);
       }
     }
